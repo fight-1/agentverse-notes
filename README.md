@@ -106,8 +106,10 @@ npm run dev          # http://localhost:4321
 | 改哪里 | 改成什么 | 不改会怎样 |
 |---|---|---|
 | `astro.config.mjs` 的 `SITE` | 你自己的域名，如 `https://your-site.pages.dev` | RSS、canonical、sitemap、OG 分享图链接仍指向原站 |
-| `src/pages/notes/[...slug].astro` 里的 `data-repo` | 你的 `用户名/仓库名` | 评论区（giscus）加载不出来 |
+| `src/pages/notes/[...slug].astro` 里的 `data-repo` **和** `data-repo-id` | 你的仓库名 + 仓库的数字 ID（在 https://giscus.app 配置时会自动给出） | 评论区（giscus）加载不出来 |
 | `src/content/notes/**/*.md` | 替换成你自己的文章 | 站点会带着原作者的笔记 |
+
+> 评论默认关闭，所以这两处不改站点也能正常跑；要开评论时再去 giscus.app 拿 ID 即可。
 
 ### 部署（Cloudflare Pages）
 
