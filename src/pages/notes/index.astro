@@ -1,0 +1,233 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import NoteCard from '../../components/NoteCard.astro';
+import { getNotes, uniqueCategories, uniqueTags } from '../../lib/notes';
+
+const notes = await getNotes();
+const cats = uniqueCategories(notes);
+const tags = uniqueTags(notes);
+
+const category = Astro.url.searchParams.get('category');
+const tag = Astro.url.searchParams.get('tag');
+
+let filtered = notes;
+let heading = '全部笔记';
+if (category) {
+  filtered = notes.filter((n) => n.data.category === category);
+  heading = `分类：${category}`;
+} else if (tag) {
+  filtered = notes.filter((n) => n.data.tags.includes(tag));
+  heading = `标签：#${tag}`;
+}
+---
+
+<BaseLayout title={`${heading} · fight-1`}>
+  <div class="page-head">
+    <h1>{heading}</h1>
+    <span class="count" id="note-count">{filtered.length} 篇</span>
+    <div class="actions">
+      <a class="chip" id="clear-filter" href="/notes" data-clear-filter hidden>✕ 查看全部</a>
+    </div>
+  </div>
+
+  <div class="filters">
+    <div class="filter-row">
+      <span class="fl">分类</span>
+      <a class:list={['chip', { on: !category && !tag }]} href="/notes">全部</a>
+      {cats.map((c) => (
+        <a class:list={['chip', { on: category === c }]} href={`/notes?category=${encodeURIComponent(c)}`}># {c}</a>
+      ))}
+    </div>
+    <div class="filter-row">
+      <span class="fl">标签</span>
+      {tags.slice(0, 16).map((t) => (
+        <a class:list={['chip', { on: tag === t }]} href={`/notes?tag=${encodeURIComponent(t)}`}># {t}</a>
+      ))}
+    </div>
+  </div>
+
+  <div class="stage-bar" id="stage-bar" role="group" aria-label="舞台模式">
+    <span class="fl">舞台</span>
+    <button class="stage-btn is-active" data-stage="grid">▦ 网格</button>
+    <button class="stage-btn" data-stage="list">☰ 列表</button>
+    <button class="stage-btn" data-stage="fan">⌒ 扇形</button>
+    <button class="stage-btn" data-stage="depth">▣ 纵深叠排</button>
+    <button class="stage-btn" data-stage="cylinder">◯ 圆柱</button>
+    <button class="stage-btn" data-stage="sphere">○ 球面</button>
+    <button class="stage-btn" data-stage="spiral">⟲ 螺旋</button>
+    <button class="stage-btn" data-stage="wave">∿ 波浪矩阵</button>
+  </div>
+
+  <div class="stage-view grid" id="notes-view" data-view="grid">
+    {filtered.map((n) => <NoteCard note={n} />)}
+  </div>
+
+  <p id="empty" class="empty-box" hidden>
+    <span class="emoji">🌑</span>
+    <span class="eb-t">没有匹配的笔记</span>
+  </p>
+</BaseLayout>
+
+<style>
+  .filters {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    margin-bottom: 14px;
+  }
+  .filter-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+  .fl {
+    font-size: 12px;
+    color: var(--muted);
+    width: 32px;
+    flex: none;
+  }
+  .chip.on {
+    color: var(--accent-color);
+    border-color: var(--accent-color);
+    background: color-mix(in srgb, var(--accent) 14%, var(--surface-2));
+  }
+  .stage-bar .fl { margin-right: 2px; }
+  #notes-view {
+    position: relative;
+    min-height: 60vh;
+  }
+  #notes-view.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 16px;
+  }
+</style>
+
+<script>
+  import { initStages } from '../../scripts/stages.js';
+
+  const viewBox = document.getElementById('notes-view') as HTMLDivElement;
+  const stageBar = document.getElementById('stage-bar') as HTMLDivElement;
+  const h1 = document.querySelector('.page-head h1') as HTMLHeadingElement;
+  const countEl = document.getElementById('note-count') as HTMLSpanElement;
+  const clearA = document.getElementById('clear-filter') as HTMLAnchorElement;
+  const empty = document.getElementById('empty') as HTMLParagraphElement;
+  const allCards = Array.from(viewBox.querySelectorAll<HTMLElement>('.stage-card'));
+  const STAGE_KEY = 'notes-stage';
+  const POSKEY = 'notes:pos:' + location.pathname + location.search;
+
+  const MATURITY: Record<string, { label: string; icon: string }> = {
+    draft: { label: '草稿', icon: '🌱' },
+    growing: { label: '成长中', icon: '🌿' },
+    polished: { label: '已打磨', icon: '💎' },
+  };
+
+  const listData = allCards.map((card) => ({
+    id: card.dataset.id || '',
+    title: card.querySelector('.note-title')?.textContent || '',
+    summary: card.querySelector('.note-sum')?.textContent || '',
+    category: card.dataset.category || '',
+    tags: (card.dataset.tags || '').split('|').filter(Boolean),
+    date: card.querySelector('.note-meta time')?.textContent || '',
+    maturity: card.querySelector('.mat-badge')?.getAttribute('data-mat') || 'growing',
+    url: card.closest('a')?.getAttribute('href') || '/notes/' + (card.dataset.id || ''),
+  }));
+
+  const params = new URLSearchParams(location.search);
+  const qTag = params.get('tag');
+  const qCat = params.get('category');
+  let visible = allCards;
+  if (qCat) {
+    visible = allCards.filter((c) => c.dataset.category === qCat);
+    h1.textContent = `分类：${qCat}`;
+  } else if (qTag) {
+    visible = allCards.filter((c) => (c.dataset.tags || '').split('|').includes(qTag));
+    h1.textContent = `标签：#${qTag}`;
+  }
+  allCards.forEach((c) => { if (!visible.includes(c)) c.remove(); });
+  if (countEl) countEl.textContent = `${visible.length} 篇`;
+  if (empty) empty.hidden = visible.length > 0;
+  if (clearA) clearA.hidden = !(qCat || qTag);
+
+  // 高亮当前筛选 chip
+  const chips = document.querySelectorAll('.filter-row .chip');
+  chips.forEach((a) => a.classList.remove('on'));
+  if (qCat) {
+    chips.forEach((a) => {
+      if (a.getAttribute('href') === '/notes?category=' + encodeURIComponent(qCat)) a.classList.add('on');
+    });
+  } else if (qTag) {
+    chips.forEach((a) => {
+      if (a.getAttribute('href') === '/notes?tag=' + encodeURIComponent(qTag)) a.classList.add('on');
+    });
+  } else {
+    chips.forEach((a) => { if (a.getAttribute('href') === '/notes') a.classList.add('on'); });
+  }
+
+  function renderList() {
+    viewBox.innerHTML = listData
+      .filter((d) => visible.some((c) => c.dataset.id === d.id))
+      .map((d) => {
+        const m = MATURITY[d.maturity] || MATURITY.growing;
+        return `<article class="list-item" data-id="${d.id}">
+          <a href="${d.url}" data-astro-prefetch title="${d.title}">${d.title}</a>
+          <span class="li-meta"><span class="chip cat-chip"># ${d.category}</span><time>${d.date}</time></span>
+          <span class="chip li-mat" data-mat="${d.maturity}">${m.icon} ${m.label}</span>
+        </article>`;
+      })
+      .join('');
+  }
+
+  function enterList() {
+    viewBox.dataset.view = 'list';
+    viewBox.classList.remove('grid');
+    viewBox.classList.add('list');
+    renderList();
+    localStorage.setItem(STAGE_KEY, 'list');
+  }
+
+  function leaveList() {
+    viewBox.dataset.view = 'grid';
+    viewBox.classList.remove('list');
+    viewBox.classList.add('grid');
+    viewBox.innerHTML = '';
+    visible.forEach((c) => viewBox.appendChild(c));
+  }
+
+  // 舞台初始化（grid/fan/depth/cylinder/sphere/spiral/wave）
+  initStages(viewBox, visible, stageBar, { enterList, leaveList });
+
+  // 返回定位记忆
+  try { history.scrollRestoration = 'manual'; } catch (e) {}
+  function savePos() {
+    try {
+      const stageBtn = stageBar.querySelector('.is-active');
+      const stage = stageBtn?.getAttribute('data-stage') || 'grid';
+      sessionStorage.setItem(POSKEY, JSON.stringify({ y: window.scrollY, stage }));
+    } catch (e) {}
+  }
+  window.addEventListener('pagehide', savePos);
+  window.addEventListener('beforeunload', savePos);
+  stageBar.addEventListener('click', () => setTimeout(savePos, 60));
+  function restorePos() {
+    let s: any = null;
+    try { s = JSON.parse(sessionStorage.getItem(POSKEY) || 'null'); } catch (e) {}
+    if (!s) {
+      // 无返回记忆时按持久化舞台初始化
+      applyStage(localStorage.getItem(STAGE_KEY) || 'grid');
+      return;
+    }
+    applyStage(s.stage || 'grid');
+    window.scrollTo({ top: s.y || 0, behavior: 'auto' });
+  }
+  function applyStage(stage: string) {
+    const btn = stageBar.querySelector<HTMLButtonElement>(`[data-stage="${stage}"]`);
+    if (btn) btn.click();
+  }
+  requestAnimationFrame(() => requestAnimationFrame(restorePos));
+</script>
